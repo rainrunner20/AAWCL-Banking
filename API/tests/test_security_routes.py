@@ -26,10 +26,10 @@ class RouteGuardTests(unittest.TestCase):
 
     def test_no_duplicate_user_password_route(self):
         self.assertNotIn("def update_user_password", self.source)
-        self.assertNotIn("SELECT * FROM Users WHERE Username = ?", self.source)
+        self.assertNotIn("SELECT *", ast.get_source_segment(self.source, self.route("get_user")))
 
     def test_full_user_dump_and_cvv_response_removed(self):
-        self.assertNotIn("SELECT * FROM Users'\n    users = cursor.fetchall()", self.source)
+        self.assertNotIn("cursor.execute", ast.get_source_segment(self.source, self.route("get_all_users")))
         self.assertNotIn("'Cvv': card[4]", self.source)
         self.assertIn("Bulk user listing is disabled", self.source)
         self.assertIn("Account deletion is disabled", self.source)
