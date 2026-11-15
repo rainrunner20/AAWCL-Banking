@@ -305,66 +305,40 @@ def generate_description(transaction_type, sender, recipient, amount):
 @app.route('/transactions', methods=['POST'])
 @jwt_required()
 def make_transaction():
-    data = request.json
+    # The original endpoint committed the debit, credit, and ledger rows separately.
+    # Leave transfers disabled unless an operator explicitly enables a test sandbox.
+    if os.environ.get('AAWCL_ENABLE_SIMULATED_TRANSFERS') != '1':
+        return jsonify({'error': 'Transfers are disabled pending database staging verification.'}), 503
 
-    # Validate input data
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-    required_fields = ['sender_account_number', 'recipient_account_number', 'amount']
-    for field in required_fields:
-        if field not in data:
-            return jsonify({'error': 'Missing required field: {field}'}), 400
+    from transfer_service import TransferError, transfer_funds
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Expected a JSON object.'}), 400
 
-    sender_account_number = int(data['sender_account_number'])
-    recipient_account_number = int(data['recipient_account_number'])
-    amount = float(data['amount'])
-
-    # Verify sender's identity
-    sender_id = get_jwt_identity()
-
-    # Retrieve sender's and recipient's account details from database
-    cursor.execute('SELECT * FROM Accounts WHERE UserID = ? AND AccountNumber = ?', sender_id, sender_account_number)
-    sender_account = cursor.fetchone()
-    cursor.execute('SELECT * FROM Accounts WHERE AccountNumber = ?', recipient_account_number)
-    recipient_account = cursor.fetchone()
-
-    if not sender_account or not recipient_account:
-        return jsonify({'error': 'Invalid account numbers'}), 400
-
-    if sender_account.Balance < amount:
-        return jsonify({'error': 'Insufficient funds'}), 400
-        
-    if sender_account[5] != 'Activated':
-        return jsonify({'error': 'Sender account was not activated'}), 401
-
-    if recipient_account[5] != 'Activated':
-        return jsonify({'error': 'Recipient account was not activated'}), 401
-
-    # Update sender's and recipient's account balances
-    cursor.execute('UPDATE Accounts SET Balance = Balance - ? WHERE AccountNumber = ? AND UserID = ?', amount, sender_account_number, sender_id)
-    conn.commit()
-    cursor.execute('UPDATE Accounts SET Balance = Balance + ? WHERE AccountNumber = ?', amount, recipient_account_number)
-    conn.commit()
-
-    # Record transaction history
-    transaction_type = 'transfer'
-    sender_transaction_id = int(generate_transaction_id())
-    transaction_date = datetime.now()
-    description = str(generate_description(transaction_type, sender_account_number, recipient_account_number, amount))
-    cursor.execute(
-        'INSERT INTO TransactionLogs (LogID, AccountNumber, Recipient, LogAction, Amount, LogTime, LogDesc) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        (sender_transaction_id, sender_account_number, recipient_account_number, transaction_type, amount, transaction_date, description))
-    conn.commit()
-
-    action = 'receive'
-    receiver_transaction_id = int(generate_transaction_id())
-    description = str(generate_description(transaction_type, sender_account_number, recipient_account_number, amount))
-    cursor.execute(
-        'INSERT INTO TransactionLogs (LogID, AccountNumber, Recipient, LogAction, Amount, LogTime, Logdesc) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        (receiver_transaction_id, recipient_account_number, recipient_account_number, action, amount, transaction_date, description))
-    conn.commit()
-
-    return jsonify({'message': 'Transaction successful!'}), 200
+    # A separate, transaction-scoped connection avoids reusing a global cursor
+    # across concurrent requests. Credentials never appear in source code.
+    connection = None
+    try:
+        connection = pyodbc.connect(
+            'DRIVER={ODBC Driver 18 for SQL Server};SERVER=' + server
+            + ';DATABASE=' + database + ';UID=' + username
+            + ';PWD=' + password + ';Encrypt=yes;TrustServerCertificate=no',
+            autocommit=False,
+            timeout=10,
+        )
+        result = transfer_funds(
+            connection, get_jwt_identity(), data.get('sender_account_number'),
+            data.get('recipient_account_number'), data.get('amount')
+        )
+        return jsonify(result), 200
+    except TransferError as exc:
+        return jsonify({'error': str(exc)}), exc.status_code
+    except Exception:
+        app.logger.exception('Transfer failed')
+        return jsonify({'error': 'Unable to complete the transfer.'}), 500
+    finally:
+        if connection is not None:
+            connection.close()
 
 @app.route('/logs', methods=['POST'])
 @jwt_required()
