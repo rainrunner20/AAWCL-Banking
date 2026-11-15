@@ -136,68 +136,52 @@ def login():
     else:
         return jsonify({'message': 'Invalid username or password'}), 401
 
-# Get all users
+# Listing all banking users is not a public API operation.
 @app.route('/users', methods=['GET'])
+@jwt_required()
 def get_all_users():
-    cursor.execute('SELECT * FROM Users')
-    users = cursor.fetchall()
-    result_list = []
-    for user in users:
-        result_list.append(dict(zip([column[0] for column in cursor.description], user)))
-    json_result = json.dumps(result_list)
-    return jsonify(json_result), 200
+    return jsonify({'error': 'Bulk user listing is disabled.'}), 403
 
-# Get user by Username
+# Only the authenticated user can view their limited profile.
 @app.route('/users/<string:Username>', methods=['GET'])
+@jwt_required()
 def get_user(Username):
-    cursor.execute('SELECT * FROM Users WHERE Username = ?', Username)
+    current_id = get_jwt_identity()
+    cursor.execute(
+        'SELECT UserID, Username, Email, FullName, CurrAddr, PhoneNumber FROM Users '
+        'WHERE Username = ? AND UserID = ?', Username, current_id
+    )
     user = cursor.fetchone()
-    user_dict = dict(zip([column[0] for column in cursor.description], user))
-    json_result = json.dumps(user_dict)
     if not user:
         return jsonify({'error': 'User not found'}), 404
-    return jsonify({'user': json_result}), 200
+    fields = ('UserID', 'Username', 'Email', 'FullName', 'CurrAddr', 'PhoneNumber')
+    return jsonify({'user': dict(zip(fields, user))}), 200
 
-# Update user information by UserID
+# Account profile edits require a matching token subject.
 @app.route('/users/<int:UserID>', methods=['PUT'])
+@jwt_required()
 def update_user(UserID):
-    cursor.execute('SELECT * FROM Users WHERE UserID = ?', UserID)
-    user = cursor.fetchone()
-    if not user:
+    if str(get_jwt_identity()) != str(UserID):
+        return jsonify({'error': 'Forbidden'}), 403
+    data = request.get_json(silent=True)
+    fields = ('Email', 'FullName', 'CurrAddr', 'PhoneNumber')
+    if not isinstance(data, dict) or any(field not in data for field in fields):
+        return jsonify({'error': 'A complete profile is required.'}), 400
+    cursor.execute('SELECT 1 FROM Users WHERE UserID = ?', UserID)
+    if not cursor.fetchone():
         return jsonify({'error': 'User not found'}), 404
-    data = request.json
     cursor.execute(
         'UPDATE Users SET Email=?, FullName=?, CurrAddr=?, PhoneNumber=? WHERE UserID=?',
-        data.get('Email'), data.get('FullName'), data.get('CurrAddr'),
-        data.get('PhoneNumber'), UserID)
+        data['Email'], data['FullName'], data['CurrAddr'], data['PhoneNumber'], UserID
+    )
     conn.commit()
-    return jsonify({'message': 'User updated successfully'}), 200
+    return jsonify({'message': 'Profile updated.'}), 200
 
-# Update user username and password by UserID
-@app.route('/users/<int:UserID>', methods=['PUT'])
-def update_user_password(UserID):
-    cursor.execute('SELECT * FROM Users WHERE UserID = ?', UserID)
-    user = cursor.fetchone()
-    if not user:
-        return jsonify({'error': 'User not found'}), 404
-    data = request.json
-    cursor.execute(
-        'UPDATE Users SET Username = ?, PasswordHash = ?',
-        data.get('Username'), data.get('PasswordHash'), UserID)
-    conn.commit()
-    return jsonify({'message': 'User updated successfully'}), 200
-
-# Delete user by UserID
+# Deleting banking accounts requires identity verification and ledger cleanup.
 @app.route('/users/<int:UserID>', methods=['DELETE'])
+@jwt_required()
 def delete_user(UserID):
-    cursor.execute('SELECT * FROM Users WHERE UserID = ?', UserID)
-    user = cursor.fetchone()
-    if not user:
-        return jsonify({'message': 'User not found'}), 404
-
-    cursor.execute('DELETE FROM Users WHERE UserID = ?', UserID)
-    conn.commit()
-    return jsonify({'message': 'User deleted successfully'}), 200
+    return jsonify({'error': 'Account deletion is disabled pending a safe workflow.'}), 501
 
 @app.route('/openaccount', methods=['POST'])
 @jwt_required()
@@ -511,8 +495,7 @@ def my_cards():
             'CardNumber': card[0],
             'CardHolder': card[1],
             'ExpirationDate': card[2],
-            'Cvv': card[4],
-            'CardType': card[5],
+                'CardType': card[5],
             'Balance': float(card[7]),
             'CardStatus': card[8]
         }

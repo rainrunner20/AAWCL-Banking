@@ -15,6 +15,8 @@ jobs:
           python-version: "3.12"
       - name: Python syntax check
         run: python -m py_compile API/API.py
+      - name: Test user API guards without a database
+        run: python -m unittest discover -s API/tests -v
       - name: Verify secrets are not literal assignments
         run: |
           python - <<'PY'
