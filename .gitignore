@@ -1,3 +1,10 @@
-node_modules
-
+node_modules/
 .fake
+.env
+.env.*
+!.env.example
+API/.env
+API/.env.*
+!API/.env.example
+__pycache__/
+*.py[cod]

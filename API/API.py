@@ -1,4 +1,5 @@
 import random
+import os
 from decimal import Decimal
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -11,15 +12,18 @@ import uuid
 from datetime import datetime
 
 app = Flask(__name__)
-CORS(app)
-app.config['JWT_SECRET_KEY'] = 'CSC430AAWCLBank'
+CORS(app, origins=[origin.strip() for origin in os.getenv('AAWCL_ALLOWED_ORIGINS', 'http://localhost:4200').split(',') if origin.strip()])
+signing_key = os.environ.get('AAWCL_JWT_SECRET_KEY', '')
+if len(signing_key) < 32:
+    raise RuntimeError('Set a unique AAWCL_JWT_SECRET_KEY of at least 32 characters.')
+app.config['JWT_SECRET_KEY'] = signing_key
 jwt = JWTManager(app)
 
 # Connection parameters
-server = 'aawcl.database.windows.net'
-database = 'AAWCL'
-username = 'aawcladmin'
-password = 'CSC430server'
+server = os.environ['AAWCL_DB_SERVER']
+database = os.environ['AAWCL_DB_NAME']
+username = os.environ['AAWCL_DB_USER']
+password = os.environ['AAWCL_DB_PASSWORD']
 
 # Establish connection
 conn = pyodbc.connect('DRIVER={SQL Server};SERVER='+server+';DATABASE='+database+';UID='+username+';PWD='+ password)
@@ -517,4 +521,4 @@ def my_cards():
     return jsonify(json_result), 200
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=False)

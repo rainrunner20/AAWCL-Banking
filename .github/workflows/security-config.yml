@@ -1,0 +1,31 @@
+name: Validate credential configuration
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python syntax check
+        run: python -m py_compile API/API.py
+      - name: Verify secrets are not literal assignments
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          tree = ast.parse(Path("API/API.py").read_text())
+          sensitive = {"password", "username", "server", "database", "signing_key"}
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+                  if any(isinstance(t, ast.Name) and t.id in sensitive for t in node.targets):
+                      raise SystemExit("Hard-coded credential assignment in API/API.py")
+          if Path("API/.env").exists():
+              raise SystemExit("An actual .env file was committed.")
+          PY
