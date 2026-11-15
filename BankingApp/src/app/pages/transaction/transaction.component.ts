@@ -32,7 +32,7 @@ export class TransactionComponent implements OnInit {
     },
     (error) => {
       console.error(error);
-      this.transactionStatus = error;
+      this.transactionStatus = typeof error === 'string' ? error : 'The simulated transfer failed.';
     });
   }
 
@@ -50,5 +50,5 @@ export class TransactionComponent implements OnInit {
 }
 
 export interface Account {
-  AccountNumber: number
+  AccountNumber: string
 }

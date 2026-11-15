@@ -234,7 +234,8 @@ def my_accounts():
         account_dict = dict(zip([column[0] for column in cursor.description], account))
 
         # Convert decimal values to float
-        account_dict['Balance'] = float(account_dict['Balance'])
+        account_dict['Balance'] = str(account_dict['Balance'])
+        account_dict['AccountNumber'] = str(account_dict['AccountNumber'])
 
         # Convert datetime objects to ISO format string
         account_dict['OpeningDate'] = account_dict['OpeningDate'].isoformat()
@@ -272,9 +273,9 @@ def accounts_overview():
             return jsonify({'message': 'no account exists'}), 400
         for account in accounts:
             account_dict = {
-                'AccountNumber': account[0],
+                'AccountNumber': str(account[0]),
                 'AccountType': account[2],
-                'Balance': float(account[3])
+                'Balance': str(account[3])
             }
             result_list.append(account_dict)
         json_result = json.dumps(result_list)

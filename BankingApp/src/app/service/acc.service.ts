@@ -56,7 +56,7 @@ export class AccountService {
     );
   }
 
-  makeTransaction(senderAccountNumber: number, recipientAccountNumber: number, amount: number): Observable<any> {
+  makeTransaction(senderAccountNumber: string, recipientAccountNumber: string, amount: string): Observable<any> {
     const token = this.jwtService.getToken()
     const headers = new HttpHeaders().set('Authorization', `Bearer ${token}`);
     const data = { sender_account_number: senderAccountNumber, recipient_account_number: recipientAccountNumber, amount };
